@@ -1,11 +1,12 @@
 ﻿# Discord Backup
 
-[![downloadsBadge](https://img.shields.io/npm/dt/discord-backup?style=for-the-badge)](https://npmjs.com/discord-backup)
-[![versionBadge](https://img.shields.io/npm/v/discord-backup?style=for-the-badge)](https://npmjs.com/discord-backup)
+[![downloadsBadge](https://img.shields.io/npm/dt/discord-backup-v2?style=for-the-badge)](https://npmjs.com/discord-backup-v2)
+[![versionBadge](https://img.shields.io/npm/v/discord-backup-v2?style=for-the-badge)](https://npmjs.com/discord-backup-v2)
 
 Discord Backup is a Node.js module to create and restore Discord server backups using discord.js v14.25.1.
 
 Features:
+
 - Unlimited backups
 - Restores channels, roles, permissions, bans, emojis, guild settings, and messages (via webhooks)
 - Rate limit aware and resilient to API errors
@@ -26,13 +27,13 @@ Create a client first, then use it for all operations.
 const backup = require('discord-backup');
 
 async function main(guild) {
-  const client = await backup.createBackupClient({
-    storage: 'file',
-    storagePath: './backups'
-  });
+    const client = await backup.createBackupClient({
+        storage: 'file',
+        storagePath: './backups'
+    });
 
-  const data = await client.create(guild);
-  console.log('Backup ID:', data.id);
+    const data = await client.create(guild);
+    console.log('Backup ID:', data.id);
 }
 ```
 
@@ -42,13 +43,13 @@ async function main(guild) {
 const backup = require('discord-backup');
 
 async function main(guild) {
-  const client = await backup.createBackupClient({
-    storage: 'mongo',
-    mongoUri: process.env.MONGO_URI
-  });
+    const client = await backup.createBackupClient({
+        storage: 'mongo',
+        mongoUri: process.env.MONGO_URI
+    });
 
-  const data = await client.create(guild);
-  console.log('Backup ID:', data.id);
+    const data = await client.create(guild);
+    console.log('Backup ID:', data.id);
 }
 ```
 
@@ -59,12 +60,14 @@ async function main(guild) {
 Creates and initializes a backup client.
 
 Config:
+
 - `storage`: `'file' | 'mongo'` (default: `'file'`)
 - `storagePath`: string (only for `file`)
 - `mongoUri`: string (required for `mongo`)
 - `mongoOptions`: mongoose ConnectOptions (optional)
 
 Returns a client with:
+
 - `create(guild, options)`
 - `fetch(backupID)`
 - `list()`
@@ -79,16 +82,17 @@ Returns a client with:
 const client = await backup.createBackupClient({ storage: 'file' });
 
 await client.create(guild, {
-  maxMessagesPerChannel: 10,
-  jsonSave: true,
-  jsonBeautify: true,
-  doNotBackup: ['roles', 'channels', 'emojis', 'bans'],
-  backupMembers: false,
-  saveImages: 'base64'
+    maxMessagesPerChannel: 10,
+    jsonSave: true,
+    jsonBeautify: true,
+    doNotBackup: ['roles', 'channels', 'emojis', 'bans'],
+    backupMembers: false,
+    saveImages: 'base64'
 });
 ```
 
 Options:
+
 - `maxMessagesPerChannel`: number (0 disables message backup)
 - `jsonSave`: boolean (default true)
 - `jsonBeautify`: boolean (default true)
@@ -100,12 +104,13 @@ Options:
 
 ```js
 await client.load(backupID, guild, {
-  clearGuildBeforeRestore: true,
-  maxMessagesPerChannel: 10
+    clearGuildBeforeRestore: true,
+    maxMessagesPerChannel: 10
 });
 ```
 
 Options:
+
 - `clearGuildBeforeRestore`: boolean (default true)
 - `maxMessagesPerChannel`: number (0 disables message restore)
 - `allowedMentions`: MessageMentionOptions (default `{ parse: [] }`)
@@ -126,18 +131,21 @@ Options:
 ## Migration (v3.5.0)
 
 Breaking changes:
+
 - You must initialize a client with `createBackupClient()`.
 - Storage is now configured at client creation.
 
 Example migration:
 
 Before:
+
 ```js
 const backup = require('discord-backup');
 await backup.create(guild);
 ```
 
 After:
+
 ```js
 const backup = require('discord-backup');
 const client = await backup.createBackupClient({ storage: 'file' });
