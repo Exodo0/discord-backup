@@ -32,6 +32,9 @@
         "url": "https://github.com/Exodo0/discord-backup/issues"
     },
     "homepage": "https://github.com/Exodo0/discord-backup#readme",
+    "publishConfig": {
+        "access": "public"
+    },
     "dependencies": {
         "discord.js": "^14.25.1",
         "mongoose": "^8.23.0"
