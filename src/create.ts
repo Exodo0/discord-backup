@@ -4,7 +4,9 @@ import type {
     ChannelsData,
     CreateOptions,
     EmojiData,
+    ForumChannelData,
     RoleData,
+    StageChannelData,
     TextChannelData,
     VoiceChannelData
 } from './types';
@@ -13,14 +15,21 @@ import type {
     Collection,
     Guild,
     GuildChannel,
+    ForumChannel,
     Snowflake,
+    StageChannel,
     TextChannel,
     ThreadChannel,
     VoiceChannel
 } from 'discord.js';
 import { ChannelType } from 'discord.js';
-import nodeFetch from 'node-fetch';
-import { fetchChannelPermissions, fetchTextChannelData, fetchVoiceChannelData } from './util';
+import {
+    fetchChannelPermissions,
+    fetchForumChannelData,
+    fetchStageChannelData,
+    fetchTextChannelData,
+    fetchVoiceChannelData
+} from './util';
 import { MemberData } from './types/MemberData';
 
 /**
@@ -97,6 +106,7 @@ export async function getRoles(guild: Guild) {
         .sort((a, b) => b.position - a.position)
         .forEach((role) => {
             const roleData = {
+                roleId: role.id,
                 name: role.name,
                 color: role.hexColor,
                 hoist: role.hoist,
@@ -128,8 +138,9 @@ export async function getEmojis(guild: Guild, options: CreateOptions) {
                     };
                     if (options.saveImages && options.saveImages === 'base64') {
                         try {
-                            const response = await nodeFetch(emoji.imageURL());
-                            const buffer = await response.buffer();
+                            const response = await fetch(emoji.imageURL());
+                            const arrayBuffer = (await response.arrayBuffer()) as ArrayBuffer;
+                            const buffer = Buffer.from(arrayBuffer);
                             if (buffer.length <= 256 * 1024) {
                                 eData.base64 = buffer.toString('base64');
                             } else {
@@ -184,7 +195,8 @@ export async function getChannels(guild: Guild, options: CreateOptions) {
             const categoryData: CategoryData = {
                 name: category.name, // The name of the category
                 permissions: fetchChannelPermissions(category), // The overwrite permissions of the category
-                children: [] // The children channels of the category
+                children: [], // The children channels of the category
+                position: category.position
             };
             // Gets the children channels of the category and sort them by position
             const children = category.children.cache.sort((a, b) => a.position - b.position).toJSON();
@@ -193,6 +205,12 @@ export async function getChannels(guild: Guild, options: CreateOptions) {
                 if (child.type === ChannelType.GuildText || child.type === ChannelType.GuildAnnouncement) {
                     const channelData: TextChannelData = await fetchTextChannelData(child as TextChannel, options); // Gets the channel data
                     categoryData.children.push(channelData); // And then push the child in the categoryData
+                } else if (child.type === ChannelType.GuildForum) {
+                    const channelData: ForumChannelData = await fetchForumChannelData(child as ForumChannel, options);
+                    categoryData.children.push(channelData);
+                } else if (child.type === ChannelType.GuildStageVoice) {
+                    const channelData: StageChannelData = await fetchStageChannelData(child as StageChannel);
+                    categoryData.children.push(channelData);
                 } else {
                     const channelData: VoiceChannelData = await fetchVoiceChannelData(child as VoiceChannel); // Gets the channel data
                     categoryData.children.push(channelData); // And then push the child in the categoryData
@@ -220,6 +238,12 @@ export async function getChannels(guild: Guild, options: CreateOptions) {
             if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement) {
                 const channelData: TextChannelData = await fetchTextChannelData(channel as TextChannel, options); // Gets the channel data
                 channels.others.push(channelData); // Update channels object
+            } else if (channel.type === ChannelType.GuildForum) {
+                const channelData: ForumChannelData = await fetchForumChannelData(channel as ForumChannel, options);
+                channels.others.push(channelData);
+            } else if (channel.type === ChannelType.GuildStageVoice) {
+                const channelData: StageChannelData = await fetchStageChannelData(channel as StageChannel);
+                channels.others.push(channelData);
             } else {
                 const channelData: VoiceChannelData = await fetchVoiceChannelData(channel as VoiceChannel); // Gets the channel data
                 channels.others.push(channelData); // Update channels object

@@ -87,24 +87,24 @@ export const loadRoles = async (guild: Guild, backupData: BackupData): Promise<R
 /**
  * Restore the guild channels
  */
-export const loadChannels = (guild: Guild, backupData: BackupData, options: LoadOptions): Promise<unknown[]> => {
-    const loadChannelPromises: Promise<void | unknown>[] = [];
-    backupData.channels.categories.forEach((categoryData) => {
-        loadChannelPromises.push(
-            new Promise((resolve) => {
-                loadCategory(categoryData, guild).then((createdCategory) => {
-                    categoryData.children.forEach((channelData) => {
-                        loadChannel(channelData, guild, createdCategory, options);
-                        resolve(true);
-                    });
-                });
-            })
-        );
-    });
-    backupData.channels.others.forEach((channelData) => {
-        loadChannelPromises.push(loadChannel(channelData, guild, null, options));
-    });
-    return Promise.all(loadChannelPromises);
+export const loadChannels = async (guild: Guild, backupData: BackupData, options: LoadOptions): Promise<unknown[]> => {
+    const created: unknown[] = [];
+
+    for (const categoryData of backupData.channels.categories) {
+        const createdCategory = await loadCategory(categoryData, guild);
+        created.push(createdCategory);
+        for (const channelData of categoryData.children) {
+            const channel = await loadChannel(channelData, guild, createdCategory, options);
+            created.push(channel);
+        }
+    }
+
+    for (const channelData of backupData.channels.others) {
+        const channel = await loadChannel(channelData, guild, null, options);
+        created.push(channel);
+    }
+
+    return created;
 };
 
 /**

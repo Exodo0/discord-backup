@@ -1,6 +1,6 @@
-import { CategoryData, TextChannelData, VoiceChannelData } from './';
+import { CategoryData, ForumChannelData, StageChannelData, TextChannelData, VoiceChannelData } from './';
 
 export interface ChannelsData {
     categories: CategoryData[];
-    others: (TextChannelData | VoiceChannelData)[];
+    others: (TextChannelData | VoiceChannelData | StageChannelData | ForumChannelData)[];
 }

@@ -3,11 +3,10 @@ import type { BackupClient, BackupClientConfig } from './types/BackupClient';
 import type { Guild } from 'discord.js';
 import { SnowflakeUtil, IntentsBitField } from 'discord.js';
 
-import nodeFetch from 'node-fetch';
-import { sep } from 'path';
+import { resolve as resolvePath, sep } from 'path';
 
-import { existsSync, mkdirSync, statSync, unlinkSync } from 'fs';
-import { writeFile, readdir } from 'fs/promises';
+import { existsSync, mkdirSync, statSync } from 'fs';
+import { writeFile, readdir, readFile, unlink } from 'fs/promises';
 
 import mongoose, { type Connection, type ConnectOptions, type Model } from 'mongoose';
 
@@ -34,6 +33,10 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
         if (!existsSync(backups)) {
             mkdirSync(backups, { recursive: true });
         }
+    };
+
+    const resolveStoragePath = (path: string) => {
+        return resolvePath(process.cwd(), path);
     };
 
     const getBackupModel = () => {
@@ -94,7 +97,9 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
             const file = files.filter((f) => f.split('.').pop() === 'json').find((f) => f === `${backupID}.json`);
             if (file) {
                 // If the file exists
-                const backupData: BackupData = require(`${backups}${sep}${file}`);
+                const filePath = `${backups}${sep}${file}`;
+                const raw = await readFile(filePath, 'utf-8');
+                const backupData: BackupData = JSON.parse(raw);
                 // Returns backup informations
                 resolve(backupData);
             } else {
@@ -107,7 +112,7 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
     /**
      * Fetches a backup and returns the information about it
      */
-    const fetch = (backupID: string) => {
+    const fetchBackup = (backupID: string) => {
         return new Promise<BackupInfos>(async (resolve, reject) => {
             getBackupData(backupID)
                 .then((backupData) => {
@@ -173,25 +178,28 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                 };
                 if (guild.iconURL()) {
                     if (options && options.saveImages && options.saveImages === 'base64') {
-                        backupData.iconBase64 = (await nodeFetch(guild.iconURL()).then((res) => res.buffer())).toString(
-                            'base64'
-                        );
+                        const res = await globalThis.fetch(guild.iconURL());
+                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                        const buffer = Buffer.from(arrayBuffer);
+                        backupData.iconBase64 = buffer.toString('base64');
                     }
                     backupData.iconURL = guild.iconURL();
                 }
                 if (guild.splashURL()) {
                     if (options && options.saveImages && options.saveImages === 'base64') {
-                        backupData.splashBase64 = (await nodeFetch(guild.splashURL()).then((res) => res.buffer())).toString(
-                            'base64'
-                        );
+                        const res = await globalThis.fetch(guild.splashURL());
+                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                        const buffer = Buffer.from(arrayBuffer);
+                        backupData.splashBase64 = buffer.toString('base64');
                     }
                     backupData.splashURL = guild.splashURL();
                 }
                 if (guild.bannerURL()) {
                     if (options && options.saveImages && options.saveImages === 'base64') {
-                        backupData.bannerBase64 = (await nodeFetch(guild.bannerURL()).then((res) => res.buffer())).toString(
-                            'base64'
-                        );
+                        const res = await globalThis.fetch(guild.bannerURL());
+                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                        const buffer = Buffer.from(arrayBuffer);
+                        backupData.bannerBase64 = buffer.toString('base64');
                     }
                     backupData.bannerURL = guild.bannerURL();
                 }
@@ -251,7 +259,7 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
             maxMessagesPerChannel: 10
         }
     ) => {
-        return new Promise(async (resolve, reject) => {
+        return new Promise<BackupData>(async (resolve, reject) => {
             if (!guild) {
                 return reject('Invalid guild');
             }
@@ -262,22 +270,55 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                         // Clear the guild
                         await utilMaster.clearGuild(guild);
                     }
-                    await Promise.all([
-                        // Restore guild configuration
-                        loadMaster.loadConfig(guild, backupData),
-                        // Restore guild roles
-                        loadMaster.loadRoles(guild, backupData),
-                        // Restore guild channels
-                        loadMaster.loadChannels(guild, backupData, options),
-                        // Restore afk channel and timeout
-                        loadMaster.loadAFK(guild, backupData),
-                        // Restore guild emojis
-                        loadMaster.loadEmojis(guild, backupData),
-                        // Restore guild bans
-                        loadMaster.loadBans(guild, backupData),
-                        // Restore embed channel
-                        loadMaster.loadEmbedChannel(guild, backupData)
-                    ]);
+                    // Restore guild configuration
+                    await loadMaster.loadConfig(guild, backupData);
+                    // Restore guild roles
+                    await loadMaster.loadRoles(guild, backupData);
+
+                    if (options.restoreMembers && backupData.members && backupData.members.length > 0) {
+                        const roleIdMap = new Map<string, string>();
+                        for (const roleData of backupData.roles) {
+                            if (!roleData.roleId) continue;
+                            let match = guild.roles.cache.find(
+                                (r) => r.name === roleData.name && r.position === roleData.position
+                            );
+                            if (!match) {
+                                match = guild.roles.cache.find((r) => r.name === roleData.name);
+                            }
+                            if (match) {
+                                roleIdMap.set(roleData.roleId, match.id);
+                            }
+                        }
+
+                        const delay = (ms: number): Promise<void> =>
+                            new Promise<void>((res) => setTimeout(res, ms));
+                        for (const memberData of backupData.members) {
+                            try {
+                                const member = await guild.members
+                                    .fetch(memberData.userId)
+                                    .catch((): null => null);
+                                if (!member) continue;
+                                const newRoleIds = memberData.roles
+                                    .map((roleId) => roleIdMap.get(roleId))
+                                    .filter((roleId): roleId is string => Boolean(roleId));
+                                await member.roles.set(newRoleIds).catch(() => {});
+                                await delay(300);
+                            } catch {
+                                // Failed to restore member roles - skipping
+                            }
+                        }
+                    }
+
+                    // Restore guild channels
+                    await loadMaster.loadChannels(guild, backupData, options);
+                    // Restore afk channel and timeout
+                    await loadMaster.loadAFK(guild, backupData);
+                    // Restore guild emojis
+                    await loadMaster.loadEmojis(guild, backupData);
+                    // Restore guild bans
+                    await loadMaster.loadBans(guild, backupData);
+                    // Restore embed channel
+                    await loadMaster.loadEmbedChannel(guild, backupData);
                 } catch (e) {
                     return reject(e);
                 }
@@ -303,10 +344,13 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                     return resolve();
                 }
 
-                ensureStorageFolder();
-                require(`${backups}${sep}${backupID}.json`);
-                unlinkSync(`${backups}${sep}${backupID}.json`);
-                resolve();
+            ensureStorageFolder();
+            const filePath = `${backups}${sep}${backupID}.json`;
+            if (!existsSync(filePath)) {
+                return reject('Backup not found');
+            }
+            await unlink(filePath);
+            resolve();
             } catch (error) {
                 reject('Backup not found');
             }
@@ -334,7 +378,7 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
         if (path.endsWith(sep)) {
             path = path.substr(0, path.length - 1);
         }
-        backups = path;
+        backups = resolveStoragePath(path);
         storageMode = 'file';
         ensureStorageFolder();
     };
@@ -350,7 +394,7 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
 
     return {
         create,
-        fetch,
+        fetch: fetchBackup,
         list,
         load,
         remove,

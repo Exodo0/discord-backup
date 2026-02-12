@@ -108,6 +108,8 @@ await client.load(backupID, guild, {
 Options:
 - `clearGuildBeforeRestore`: boolean (default true)
 - `maxMessagesPerChannel`: number (0 disables message restore)
+- `allowedMentions`: MessageMentionOptions (default `{ parse: [] }`)
+- `restoreMembers`: boolean (assigns roles to existing members based on backup)
 
 ## Restored Data
 
@@ -115,6 +117,7 @@ Options:
 - Verification level, explicit content filter, default message notifications
 - AFK channel and timeout
 - Channels (permissions, topic, nsfw, rate limit)
+- Forum channels (tags, default reaction, posts/threads)
 - Roles (permissions, colors, hoist, mentionable)
 - Emojis
 - Bans

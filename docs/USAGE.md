@@ -53,6 +53,10 @@ await client.load(data.id, guild, {
 });
 ```
 
+You can also pass:
+- `allowedMentions` to suppress mentions while restoring messages.
+- `restoreMembers` to assign roles to existing members based on the backup.
+
 ## 4. Fetch backup info
 
 ```js
@@ -82,6 +86,18 @@ client.setStorageFolder('./other-backups');
 // Switch to MongoDB
 await client.setMongoDB(process.env.MONGO_URI);
 ```
+
+## Restored data
+
+- Server icon, banner, splash
+- Verification level, explicit content filter, default message notifications
+- AFK channel and timeout
+- Channels (permissions, topic, nsfw, rate limit)
+- Forum channels (tags, default reaction, posts/threads)
+- Roles (permissions, colors, hoist, mentionable)
+- Emojis
+- Bans
+- Messages (via webhooks)
 
 ## Common errors
 

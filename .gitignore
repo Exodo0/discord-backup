@@ -4,6 +4,7 @@ backups/
 # Logs
 logs
 *.log
+.turbo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -68,3 +69,6 @@ typings/
 
 # Tests
 /test
+
+# Local bot runner
+/Bot

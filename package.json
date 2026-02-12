@@ -1,45 +1,48 @@
-﻿{
-    "name":  "discord-backup",
-    "version":  "3.5.0",
-    "description":  "A complete framework to facilitate server backup using discord.js v14 with rate limiting and error handling",
-    "main":  "lib/index.js",
-    "files":  [
-                  "lib/**/*"
-              ],
-    "scripts":  {
-                    "test":  "echo \"Error: no test specified\" \u0026\u0026 exit 1",
-                    "build":  "tsc",
-                    "format":  "prettier --write \"src/**/*.ts\"",
-                    "lint":  "tslint -p tsconfig.json"
-                },
-    "repository":  {
-                       "type":  "git",
-                       "url":  "git+https://github.com/Exodo0/discord-backup.git"
-                   },
-    "keywords":  [
-                     "discord",
-                     "discord.js",
-                     "backup",
-                     "clone",
-                     "bot",
-                     "discord-backup"
-                 ],
-    "author":  "Egologic",
-    "license":  "ISC",
-    "bugs":  {
-                 "url":  "https://github.com/Exodo0/discord-backup/issues"
-             },
-    "homepage":  "https://github.com/Exodo0/discord-backup#readme",
-    "dependencies":  {
-                         "mongoose":  "^8.11.0",
-                         "discord.js":  "^14.25.1"
-                     },
-    "devDependencies":  {
-                            "@types/node":  "^24.0.3",
-                            "@types/node-fetch":  "^2.6.12",
-                            "prettier":  "^3.5.3",
-                            "tslint":  "^6.1.1",
-                            "tslint-config-prettier":  "^1.18.0",
-                            "typescript":  "^5.8.3"
-                        }
+{
+    "name": "discord-backup",
+    "version": "3.5.0",
+    "description": "A complete framework to facilitate server backup using discord.js v14 with rate limiting and error handling",
+    "main": "lib/index.js",
+    "files": [
+        "lib/**/*"
+    ],
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "build": "tsc",
+        "format": "prettier --write \"src/**/*.ts\"",
+        "lint": "eslint \"src/**/*.ts\"",
+        "build:turbo": "turbo run build"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Exodo0/discord-backup.git"
+    },
+    "keywords": [
+        "discord",
+        "discord.js",
+        "backup",
+        "clone",
+        "bot",
+        "discord-backup"
+    ],
+    "author": "Egologic",
+    "packageManager": "pnpm@10.29.2",
+    "license": "ISC",
+    "bugs": {
+        "url": "https://github.com/Exodo0/discord-backup/issues"
+    },
+    "homepage": "https://github.com/Exodo0/discord-backup#readme",
+    "dependencies": {
+        "discord.js": "^14.25.1",
+        "mongoose": "^8.23.0"
+    },
+    "devDependencies": {
+        "@types/node": "^24.10.13",
+        "@typescript-eslint/eslint-plugin": "^7.18.0",
+        "@typescript-eslint/parser": "^7.18.0",
+        "eslint-config-prettier": "^9.1.2",
+        "prettier": "^3.8.1",
+        "turbo": "^2.8.7",
+        "typescript": "^5.9.3"
+    }
 }
