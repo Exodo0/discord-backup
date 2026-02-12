@@ -1,5 +1,5 @@
 {
-    "name": "@exodo0/discord-backup",
+    "name": "@Exodo0/discord-backup",
     "version": "3.5.0",
     "description": "A complete framework to facilitate server backup using discord.js v14 with rate limiting and error handling",
     "main": "lib/index.js",
