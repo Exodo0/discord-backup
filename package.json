@@ -1,5 +1,5 @@
 {
-    "name": "@Exodo0/discord-backup",
+    "name": "discord-backup-v2",
     "version": "3.5.0",
     "description": "A complete framework to facilitate server backup using discord.js v14 with rate limiting and error handling",
     "main": "lib/index.js",
@@ -25,7 +25,7 @@
         "bot",
         "discord-backup"
     ],
-    "author": "Egologic",
+    "author": "Exodo0",
     "packageManager": "pnpm@10.29.2",
     "license": "ISC",
     "bugs": {
