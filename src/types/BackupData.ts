@@ -4,7 +4,7 @@ import {
     Snowflake,
     GuildVerificationLevel
 } from 'discord.js';
-import { AfkData, BanData, ChannelsData, EmojiData, RoleData, WidgetData } from './';
+import { AfkData, BanData, ChannelsData, EmojiData, OnboardingData, RoleData, ScheduledEventData, WidgetData } from './';
 import { MemberData } from './MemberData';
 
 export interface BackupData {
@@ -25,6 +25,14 @@ export interface BackupData {
     bans: BanData[];
     emojis: EmojiData[];
     members: MemberData[];
+    onboarding?: OnboardingData;
+    community?: {
+        rulesChannelId?: string | null;
+        rulesChannelName?: string | null;
+        publicUpdatesChannelId?: string | null;
+        publicUpdatesChannelName?: string | null;
+    };
+    scheduledEvents?: ScheduledEventData[];
     createdTimestamp: number;
     guildID: string;
     id: Snowflake;

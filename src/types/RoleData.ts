@@ -7,4 +7,7 @@ export interface RoleData {
     mentionable: boolean;
     position: number;
     isEveryone: boolean;
+    iconURL?: string;
+    iconBase64?: string;
+    unicodeEmoji?: string | null;
 }

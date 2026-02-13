@@ -81,6 +81,86 @@ async function withRetry<T>(operation: () => Promise<T>, maxRetries: number = 3,
     throw new Error('Max retries exceeded');
 }
 
+const loadMessages = async (
+    channel: TextChannel | ThreadChannel,
+    messages: MessageData[],
+    options?: LoadOptions,
+    previousWebhook?: Webhook
+): Promise<Webhook | void> => {
+    try {
+        const webhook =
+            previousWebhook ||
+            (await withRetry(
+                () =>
+                    (channel as TextChannel).createWebhook({
+                        name: 'MessagesBackup',
+                        avatar: channel.client.user.displayAvatarURL()
+                    }),
+                2,
+                1000
+            ).catch((): null => null));
+
+        if (!webhook) return;
+
+        const filteredMessages = messages
+            .filter((m) => m.content?.length > 0 || m.embeds?.length > 0 || m.files?.length > 0)
+            .reverse()
+            .slice(0, options?.maxMessagesPerChannel || 10);
+
+        for (let i = 0; i < filteredMessages.length; i++) {
+            const msg = filteredMessages[i];
+            try {
+                const files =
+                    msg.files
+                        ?.map((f): AttachmentBuilder | null => {
+                            try {
+                                let attachmentInput: string | Buffer = f.attachment;
+                                if (typeof f.attachment === 'string' && !f.attachment.startsWith('http')) {
+                                    attachmentInput = Buffer.from(f.attachment, 'base64');
+                                }
+                                return new AttachmentBuilder(attachmentInput, { name: f.name });
+                            } catch {
+                                return null;
+                            }
+                        })
+                        .filter((f): f is AttachmentBuilder => f !== null) || [];
+
+                const sentMsg = await withRetry(
+                    (): Promise<Message> =>
+                        webhook.send({
+                            content: msg.content?.length ? msg.content.slice(0, 2000) : undefined,
+                            username: msg.username?.slice(0, 80) || 'Unknown User',
+                            avatarURL: msg.avatar,
+                            embeds: msg.embeds?.slice(0, 10) || [],
+                            files: files.slice(0, 10),
+                            allowedMentions: options?.allowedMentions || { parse: [] },
+                            threadId: channel.isThread() ? channel.id : undefined
+                        }),
+                    2,
+                    500
+                ).catch((error: any): null => {
+                    // Failed to send message
+                    return null;
+                });
+
+                if (msg.pinned && sentMsg) {
+                    await withRetry((): Promise<Message> => (sentMsg as Message).pin(), 1, 1000).catch(() => {});
+                }
+
+                if (i < filteredMessages.length - 1) {
+                    await delay(1000);
+                }
+            } catch (error: any) {
+                // Failed to process message
+            }
+        }
+        return webhook;
+    } catch (error: any) {
+        // Failed to load messages
+        return;
+    }
+};
+
 /**
  * Gets the permissions for a channel
  */
@@ -116,7 +196,8 @@ export async function fetchVoiceChannelData(channel: VoiceChannel) {
             userLimit: channel.userLimit,
             parent: channel.parent ? channel.parent.name : null,
             permissions: fetchChannelPermissions(channel),
-            position: channel.position
+            position: channel.position,
+            channelId: channel.id
         };
         /* Return channel data */
         resolve(channelData);
@@ -133,7 +214,8 @@ export async function fetchStageChannelData(channel: StageChannel) {
             parent: channel.parent ? channel.parent.name : null,
             permissions: fetchChannelPermissions(channel),
             position: channel.position,
-            topic: channel.topic ?? null
+            topic: channel.topic ?? null,
+            channelId: channel.id
         };
         resolve(channelData);
     });
@@ -152,7 +234,8 @@ export async function fetchForumChannelData(channel: ForumChannel, options: Crea
             position: channel.position,
             availableTags: channel.availableTags,
             defaultReactionEmoji: channel.defaultReactionEmoji ?? null,
-            threads: []
+            threads: [],
+            channelId: channel.id
         };
 
         if (channel.threads?.cache?.size) {
@@ -297,7 +380,8 @@ export async function fetchTextChannelData(channel: TextChannel | NewsChannel, o
             messages: [],
             isNews: channel.type === ChannelType.GuildAnnouncement,
             threads: [],
-            position: channel.position
+            position: channel.position,
+            channelId: channel.id
         };
         /* Fetch channel threads */
         if (channel.threads.cache.size > 0) {
@@ -381,90 +465,6 @@ export async function loadChannel(
     category?: CategoryChannel,
     options?: LoadOptions
 ) {
-    const loadMessages = async (
-        channel: TextChannel | ThreadChannel,
-        messages: MessageData[],
-        previousWebhook?: Webhook
-    ): Promise<Webhook | void> => {
-        try {
-            const webhook =
-                previousWebhook ||
-                (await withRetry(
-                    () =>
-                        (channel as TextChannel).createWebhook({
-                            name: 'MessagesBackup',
-                            avatar: channel.client.user.displayAvatarURL()
-                        }),
-                    2,
-                    1000
-                ).catch((): null => null));
-
-            if (!webhook) return;
-
-            const filteredMessages = messages
-                .filter((m) => m.content?.length > 0 || m.embeds?.length > 0 || m.files?.length > 0)
-                .reverse()
-                .slice(0, options?.maxMessagesPerChannel || 10);
-
-            for (let i = 0; i < filteredMessages.length; i++) {
-                const msg = filteredMessages[i];
-                try {
-                    const files =
-                        msg.files
-                            ?.map((f): AttachmentBuilder | null => {
-                                try {
-                                    let attachmentInput: string | Buffer = f.attachment;
-                                    if (
-                                        typeof f.attachment === 'string' &&
-                                        !f.attachment.startsWith('http')
-                                    ) {
-                                        attachmentInput = Buffer.from(f.attachment, 'base64');
-                                    }
-                                    return new AttachmentBuilder(attachmentInput, { name: f.name });
-                                } catch {
-                                    return null;
-                                }
-                            })
-                            .filter((f): f is AttachmentBuilder => f !== null) || [];
-
-                    const sentMsg = await withRetry(
-                        (): Promise<Message> =>
-                            webhook.send({
-                                content: msg.content?.length ? msg.content.slice(0, 2000) : undefined,
-                                username: msg.username?.slice(0, 80) || 'Unknown User',
-                                avatarURL: msg.avatar,
-                                embeds: msg.embeds?.slice(0, 10) || [],
-                                files: files.slice(0, 10),
-                                allowedMentions: options?.allowedMentions || { parse: [] },
-                                threadId: channel.isThread() ? channel.id : undefined
-                            }),
-                        2,
-                        500
-                    ).catch((error: any): null => {
-                        // Failed to send message
-                        return null;
-                    });
-
-                    if (msg.pinned && sentMsg) {
-                        await withRetry((): Promise<Message> => (sentMsg as Message).pin(), 1, 1000).catch(
-                            () => {}
-                        );
-                    }
-
-                    if (i < filteredMessages.length - 1) {
-                        await delay(1000);
-                    }
-                } catch (error: any) {
-                    // Failed to process message
-                }
-            }
-            return webhook;
-        } catch (error: any) {
-            // Failed to load messages
-            return;
-        }
-    };
-
     const createOptions: GuildChannelCreateOptions = {
         name: channelData.name,
         type: null,
@@ -560,7 +560,7 @@ export async function loadChannel(
                         })
                         .then((thread) => {
                             if (!webhook) return;
-                            return loadMessages(thread, threadData.messages, webhook);
+                            return loadMessages(thread, threadData.messages, options, webhook);
                         });
                 })
             );
@@ -587,7 +587,7 @@ export async function loadChannel(
                     const remainingMessages =
                         threadData.messages.length > 0 ? threadData.messages.slice(1) : threadData.messages;
                     if (remainingMessages.length > 0) {
-                        await loadMessages(createdThread, remainingMessages);
+                        await loadMessages(createdThread, remainingMessages, options);
                     }
                 } catch {
                     // Failed to create forum thread - skipping
@@ -599,16 +599,125 @@ export async function loadChannel(
     return channel;
 }
 
+export async function applyExistingChannel(
+    channel: TextChannel | VoiceChannel | StageChannel | ForumChannel,
+    channelData: TextChannelData | VoiceChannelData | StageChannelData | ForumChannelData,
+    guild: Guild,
+    options?: LoadOptions,
+    isSystemChannel: boolean = false
+) {
+    /* Update channel permissions */
+    const finalPermissions: OverwriteData[] = [];
+    channelData.permissions.forEach((perm) => {
+        const role = guild.roles.cache.find((r) => r.name === perm.roleName);
+        if (role) {
+            finalPermissions.push({
+                id: role.id,
+                allow: BigInt(perm.allow),
+                deny: BigInt(perm.deny)
+            });
+        }
+    });
+    await channel.permissionOverwrites.set(finalPermissions);
+
+    if (typeof channelData.position === 'number') {
+        await channel.setPosition(channelData.position).catch(() => {});
+    }
+
+    const isStageData = (channelData as StageChannelData).type === ChannelType.GuildStageVoice;
+    if (isStageData && 'setTopic' in channel) {
+        const topic = (channelData as StageChannelData).topic;
+        if (topic) {
+            (channel as unknown as StageChannel).setTopic(topic).catch(() => {});
+        }
+    }
+
+    const isForumData = (channelData as ForumChannelData).type === ChannelType.GuildForum;
+    if (isForumData) {
+        const forumData = channelData as ForumChannelData;
+        await (channel as ForumChannel).setAvailableTags(forumData.availableTags ?? []).catch(() => {});
+        await (channel as ForumChannel)
+            .setDefaultReactionEmoji(forumData.defaultReactionEmoji ?? null)
+            .catch(() => {});
+        if (forumData.topic) {
+            await (channel as ForumChannel).setTopic(forumData.topic).catch(() => {});
+        }
+    }
+
+    if (isSystemChannel) return;
+
+    if (channelData.type === ChannelType.GuildText) {
+        /* Load messages */
+        let webhook: Webhook | void;
+        if ((channelData as TextChannelData).messages.length > 0) {
+            webhook = await loadMessages(channel as TextChannel, (channelData as TextChannelData).messages).catch(
+                () => {}
+            );
+        }
+        /* Load threads */
+        if ((channelData as TextChannelData).threads.length > 0) {
+            await Promise.all(
+                (channelData as TextChannelData).threads.map(async (threadData) => {
+                    const autoArchiveDuration = threadData.autoArchiveDuration;
+                    return (channel as TextChannel).threads
+                        .create({
+                            name: threadData.name,
+                            autoArchiveDuration
+                        })
+                        .then((thread) => {
+                            if (!webhook) return;
+                            return loadMessages(thread, threadData.messages, options, webhook);
+                        });
+                })
+            );
+        }
+    }
+
+    if (isForumData) {
+        const forumData = channelData as ForumChannelData;
+        if (forumData.threads.length > 0 && 'threads' in channel) {
+            for (const threadData of forumData.threads) {
+                try {
+                    const initialMessage =
+                        threadData.messages.length > 0
+                            ? threadData.messages[0].content || ' '
+                            : ' ';
+                    const createdThread = await (channel as unknown as ForumChannel).threads.create({
+                        name: threadData.name,
+                        autoArchiveDuration: threadData.autoArchiveDuration,
+                        message: {
+                            content: initialMessage
+                        }
+                    });
+
+                    const remainingMessages =
+                        threadData.messages.length > 0 ? threadData.messages.slice(1) : threadData.messages;
+                    if (remainingMessages.length > 0) {
+                        await loadMessages(createdThread, remainingMessages, options);
+                    }
+                } catch {
+                    // Failed to create forum thread - skipping
+                }
+            }
+        }
+    }
+}
+
 /**
  * Delete all roles, all channels, all emojis, etc... of a guild
  */
 export async function clearGuild(guild: Guild) {
+    const protectedChannelIds = new Set<string>();
+    if (guild.rulesChannelId) protectedChannelIds.add(guild.rulesChannelId);
+    if (guild.publicUpdatesChannelId) protectedChannelIds.add(guild.publicUpdatesChannelId);
+
     guild.roles.cache
         .filter((role) => !role.managed && role.editable && role.id !== guild.id)
         .forEach((role) => {
             role.delete().catch(() => {});
         });
     guild.channels.cache.forEach((channel) => {
+        if (protectedChannelIds.has(channel.id)) return;
         channel.delete().catch(() => {});
     });
     guild.emojis.cache.forEach((emoji) => {

@@ -7,4 +7,5 @@ export interface BaseChannelData {
     parent?: string;
     permissions: ChannelPermissionsData[];
     position: number;
+    channelId?: string;
 }

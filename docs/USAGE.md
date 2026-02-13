@@ -38,7 +38,8 @@ const data = await client.create(guild, {
   jsonSave: true,
   jsonBeautify: true,
   backupMembers: false,
-  saveImages: 'base64'
+  saveImages: 'base64',
+  skipIfUnchanged: true
 });
 
 console.log(data.id);
@@ -95,9 +96,31 @@ await client.setMongoDB(process.env.MONGO_URI);
 - Channels (permissions, topic, nsfw, rate limit)
 - Forum channels (tags, default reaction, posts/threads)
 - Roles (permissions, colors, hoist, mentionable)
+- Role icons (emoji or image)
+- Onboarding configuration
 - Emojis
 - Bans
 - Messages (via webhooks)
+
+## Scheduled backups
+
+```js
+const handle = client.startScheduler(guild, {
+  cron: '0 3 * * *',
+  timezone: 'America/New_York',
+  createOptions: { jsonBeautify: true },
+  skipIfUnchanged: true
+});
+
+// handle.stop()
+```
+
+## Diff between backups
+
+```js
+const diff = await client.diff(oldId, newId);
+console.log(diff);
+```
 
 ## Common errors
 

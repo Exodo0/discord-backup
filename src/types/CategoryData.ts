@@ -5,4 +5,5 @@ export interface CategoryData {
     permissions: ChannelPermissionsData[];
     children: (TextChannelData | VoiceChannelData | StageChannelData | ForumChannelData)[];
     position: number;
+    channelId?: string;
 }

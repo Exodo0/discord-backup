@@ -6,6 +6,7 @@ import type {
     EmojiData,
     ForumChannelData,
     RoleData,
+    ScheduledEventData,
     StageChannelData,
     TextChannelData,
     VoiceChannelData
@@ -20,6 +21,7 @@ import type {
     StageChannel,
     TextChannel,
     ThreadChannel,
+    GuildScheduledEvent,
     VoiceChannel
 } from 'discord.js';
 import { ChannelType } from 'discord.js';
@@ -99,24 +101,42 @@ export async function getMembers(guild: Guild) {
  * @param {Guild} guild The discord guild
  * @returns {Promise<RoleData[]>} The roles of the guild
  */
-export async function getRoles(guild: Guild) {
+export async function getRoles(guild: Guild, options?: CreateOptions) {
     const roles: RoleData[] = [];
-    guild.roles.cache
+    const roleList = guild.roles.cache
         .filter((role) => !role.managed)
         .sort((a, b) => b.position - a.position)
-        .forEach((role) => {
-            const roleData = {
-                roleId: role.id,
-                name: role.name,
-                color: role.hexColor,
-                hoist: role.hoist,
-                permissions: role.permissions.bitfield.toString(),
-                mentionable: role.mentionable,
-                position: role.position,
-                isEveryone: guild.id === role.id
-            };
-            roles.push(roleData);
-        });
+        .toJSON();
+
+    for (const role of roleList) {
+        const roleData: RoleData = {
+            roleId: role.id,
+            name: role.name,
+            color: role.hexColor,
+            hoist: role.hoist,
+            permissions: role.permissions.bitfield.toString(),
+            mentionable: role.mentionable,
+            position: role.position,
+            isEveryone: guild.id === role.id,
+            unicodeEmoji: role.unicodeEmoji
+        };
+
+        if (role.iconURL()) {
+            if (options?.saveImages === 'base64') {
+                try {
+                    const response = await fetch(role.iconURL());
+                    const arrayBuffer = (await response.arrayBuffer()) as ArrayBuffer;
+                    roleData.iconBase64 = Buffer.from(arrayBuffer).toString('base64');
+                } catch {
+                    roleData.iconURL = role.iconURL();
+                }
+            } else {
+                roleData.iconURL = role.iconURL();
+            }
+        }
+
+        roles.push(roleData);
+    }
     return roles;
 }
 
@@ -171,6 +191,53 @@ export async function getEmojis(guild: Guild, options: CreateOptions) {
 }
 
 /**
+ * Returns an array with the scheduled events of the guild
+ * @param {Guild} guild The discord guild
+ * @param {CreateOptions} options The backup options
+ * @returns {Promise<ScheduledEventData[]>} The scheduled events
+ */
+export async function getScheduledEvents(guild: Guild, options: CreateOptions) {
+    const events: ScheduledEventData[] = [];
+    try {
+        const fetched = await guild.scheduledEvents.fetch();
+        for (const event of fetched.values()) {
+            const data: ScheduledEventData = {
+                id: event.id,
+                name: event.name,
+                description: event.description ?? null,
+                scheduledStartTimestamp: event.scheduledStartTimestamp ?? null,
+                scheduledEndTimestamp: event.scheduledEndTimestamp ?? null,
+                privacyLevel: event.privacyLevel,
+                entityType: event.entityType,
+                channelId: event.channelId,
+                location: event.entityMetadata?.location ?? null,
+                recurrenceRule: event.recurrenceRule ?? null
+            };
+
+            const imageUrl = event.coverImageURL();
+            if (imageUrl) {
+                if (options.saveImages === 'base64') {
+                    try {
+                        const response = await fetch(imageUrl);
+                        const arrayBuffer = (await response.arrayBuffer()) as ArrayBuffer;
+                        data.imageBase64 = Buffer.from(arrayBuffer).toString('base64');
+                    } catch {
+                        data.imageURL = imageUrl;
+                    }
+                } else {
+                    data.imageURL = imageUrl;
+                }
+            }
+
+            events.push(data);
+        }
+    } catch {
+        // Failed to fetch scheduled events - skipping
+    }
+    return events;
+}
+
+/**
  * Returns an array with the channels of the guild
  * @param {Guild} guild The discord guild
  * @param {CreateOptions} options The backup options
@@ -196,7 +263,8 @@ export async function getChannels(guild: Guild, options: CreateOptions) {
                 name: category.name, // The name of the category
                 permissions: fetchChannelPermissions(category), // The overwrite permissions of the category
                 children: [], // The children channels of the category
-                position: category.position
+                position: category.position,
+                channelId: category.id
             };
             // Gets the children channels of the category and sort them by position
             const children = category.children.cache.sort((a, b) => a.position - b.position).toJSON();

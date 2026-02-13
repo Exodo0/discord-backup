@@ -12,11 +12,15 @@ export * from './ForumChannelData';
 export * from './ForumThreadData';
 export * from './LoadOptions';
 export * from './MessageData';
+export * from './OnboardingData';
 export * from './RoleData';
+export * from './ScheduleOptions';
+export * from './ScheduledEventData';
 export * from './StageChannelData';
 export * from './TextChannelData';
 export * from './ThreadChannelData';
 export * from './VoiceChannelData';
 export * from './WidgetData';
 export * from './BackupClient';
+export * from './BackupDiff';
 

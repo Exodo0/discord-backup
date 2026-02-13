@@ -1,5 +1,6 @@
-﻿import type { BackupData, BackupInfos, CreateOptions, LoadOptions } from './types/';
+﻿import type { BackupData, BackupInfos, CreateOptions, LoadOptions, OnboardingData, BackupDiff } from './types/';
 import type { BackupClient, BackupClientConfig } from './types/BackupClient';
+import type { ScheduleHandle, ScheduleOptions } from './types/ScheduleOptions';
 import type { Guild } from 'discord.js';
 import { SnowflakeUtil, IntentsBitField } from 'discord.js';
 
@@ -9,6 +10,7 @@ import { existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile, readdir, readFile, unlink } from 'fs/promises';
 
 import mongoose, { type Connection, type ConnectOptions, type Model } from 'mongoose';
+import * as cron from 'node-cron';
 
 import * as createMaster from './create';
 import * as loadMaster from './load';
@@ -48,6 +50,156 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
 
     const getBackupSizeKB = (data: BackupData) => {
         return Number((Buffer.byteLength(JSON.stringify(data)) / 1024).toFixed(2));
+    };
+
+    const stableStringify = (value: unknown): string => {
+        if (value === null || typeof value !== 'object') {
+            return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+            return `[${value.map((v) => stableStringify(v)).join(',')}]`;
+        }
+        const obj = value as Record<string, unknown>;
+        const keys = Object.keys(obj).sort();
+        return `{${keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',')}}`;
+    };
+
+    const getLatestBackupData = async (): Promise<BackupData | null> => {
+        if (storageMode === 'mongo') {
+            const model = getBackupModel();
+            const doc = await model.findOne({}, { data: 1 }).sort({ createdAt: -1 }).lean();
+            return doc ? (doc.data as BackupData) : null;
+        }
+
+        ensureStorageFolder();
+        const files = (await readdir(backups)).filter((f) => f.endsWith('.json'));
+        let latest: BackupData | null = null;
+        for (const file of files) {
+            try {
+                const raw = await readFile(`${backups}${sep}${file}`, 'utf-8');
+                const data = JSON.parse(raw) as BackupData;
+                if (!latest || data.createdTimestamp > latest.createdTimestamp) {
+                    latest = data;
+                }
+            } catch {
+                // Skip invalid files
+            }
+        }
+        return latest;
+    };
+
+    const getOnboardingData = async (guild: Guild): Promise<OnboardingData | undefined> => {
+        try {
+            const onboarding = await guild.fetchOnboarding();
+            const prompts = onboarding.prompts.map((prompt) => ({
+                id: prompt.id,
+                title: prompt.title,
+                singleSelect: prompt.singleSelect,
+                required: prompt.required,
+                inOnboarding: prompt.inOnboarding,
+                type: prompt.type,
+                options: prompt.options.map((opt) => ({
+                    id: opt.id,
+                    channels: opt.channels?.map((c) => c.id) ?? [],
+                    roles: opt.roles?.map((r) => r.id) ?? [],
+                    title: opt.title,
+                    description: opt.description ?? null,
+                    emoji: opt.emoji
+                        ? typeof opt.emoji === 'string'
+                            ? opt.emoji
+                            : opt.emoji.id ?? opt.emoji.name ?? null
+                        : null
+                }))
+            }));
+
+            return {
+                enabled: onboarding.enabled,
+                mode: onboarding.mode,
+                defaultChannels: onboarding.defaultChannels?.map((c) => c.id) ?? [],
+                prompts
+            };
+        } catch {
+            return undefined;
+        }
+    };
+
+    const buildBackupData = async (guild: Guild, options: CreateOptions): Promise<BackupData> => {
+        const backupData: BackupData = {
+            name: guild.name,
+            verificationLevel: guild.verificationLevel,
+            explicitContentFilter: guild.explicitContentFilter,
+            defaultMessageNotifications: guild.defaultMessageNotifications,
+            afk: guild.afkChannel ? { name: guild.afkChannel.name, timeout: guild.afkTimeout } : null,
+            widget: {
+                enabled: guild.widgetEnabled,
+                channel: guild.widgetChannel ? guild.widgetChannel.name : null
+            },
+            channels: { categories: [], others: [] },
+            roles: [],
+            bans: [],
+            emojis: [],
+            members: [],
+            createdTimestamp: Date.now(),
+            guildID: guild.id,
+            id: options.backupID ?? SnowflakeUtil.generate().toString()
+        };
+
+        if (guild.iconURL()) {
+            if (options.saveImages && options.saveImages === 'base64') {
+                const res = await globalThis.fetch(guild.iconURL());
+                const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                const buffer = Buffer.from(arrayBuffer);
+                backupData.iconBase64 = buffer.toString('base64');
+            }
+            backupData.iconURL = guild.iconURL();
+        }
+        if (guild.splashURL()) {
+            if (options.saveImages && options.saveImages === 'base64') {
+                const res = await globalThis.fetch(guild.splashURL());
+                const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                const buffer = Buffer.from(arrayBuffer);
+                backupData.splashBase64 = buffer.toString('base64');
+            }
+            backupData.splashURL = guild.splashURL();
+        }
+        if (guild.bannerURL()) {
+            if (options.saveImages && options.saveImages === 'base64') {
+                const res = await globalThis.fetch(guild.bannerURL());
+                const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
+                const buffer = Buffer.from(arrayBuffer);
+                backupData.bannerBase64 = buffer.toString('base64');
+            }
+            backupData.bannerURL = guild.bannerURL();
+        }
+        if (options.backupMembers) {
+            backupData.members = await createMaster.getMembers(guild);
+        }
+        if (!options.doNotBackup?.includes('bans')) {
+            backupData.bans = await createMaster.getBans(guild);
+        }
+        if (!options.doNotBackup?.includes('roles')) {
+            backupData.roles = await createMaster.getRoles(guild, options);
+        }
+        if (!options.doNotBackup?.includes('emojis')) {
+            backupData.emojis = await createMaster.getEmojis(guild, options);
+        }
+        if (!options.doNotBackup?.includes('channels')) {
+            backupData.channels = await createMaster.getChannels(guild, options);
+        }
+        if (!options.doNotBackup?.includes('scheduledEvents')) {
+            backupData.scheduledEvents = await createMaster.getScheduledEvents(guild, options);
+        }
+
+        backupData.community = {
+            rulesChannelId: guild.rulesChannelId ?? null,
+            rulesChannelName: guild.rulesChannel?.name ?? null,
+            publicUpdatesChannelId: guild.publicUpdatesChannelId ?? null,
+            publicUpdatesChannelName: guild.publicUpdatesChannel?.name ?? null
+        };
+
+        backupData.onboarding = await getOnboardingData(guild);
+
+        return backupData;
     };
 
     /**
@@ -157,71 +309,17 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
             if (!intents.has(IntentsBitField.Flags.Guilds)) return reject('Guilds intent is required');
 
             try {
-                const backupData: BackupData = {
-                    name: guild.name,
-                    verificationLevel: guild.verificationLevel,
-                    explicitContentFilter: guild.explicitContentFilter,
-                    defaultMessageNotifications: guild.defaultMessageNotifications,
-                    afk: guild.afkChannel ? { name: guild.afkChannel.name, timeout: guild.afkTimeout } : null,
-                    widget: {
-                        enabled: guild.widgetEnabled,
-                        channel: guild.widgetChannel ? guild.widgetChannel.name : null
-                    },
-                    channels: { categories: [], others: [] },
-                    roles: [],
-                    bans: [],
-                    emojis: [],
-                    members: [],
-                    createdTimestamp: Date.now(),
-                    guildID: guild.id,
-                    id: options.backupID ?? SnowflakeUtil.generate().toString()
-                };
-                if (guild.iconURL()) {
-                    if (options && options.saveImages && options.saveImages === 'base64') {
-                        const res = await globalThis.fetch(guild.iconURL());
-                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
-                        const buffer = Buffer.from(arrayBuffer);
-                        backupData.iconBase64 = buffer.toString('base64');
+                const backupData = await buildBackupData(guild, options);
+
+                if (options.skipIfUnchanged) {
+                    const latest = await getLatestBackupData();
+                    if (latest) {
+                        const current = { ...backupData, id: '', createdTimestamp: 0 };
+                        const previous = { ...latest, id: '', createdTimestamp: 0 };
+                        if (stableStringify(current) === stableStringify(previous)) {
+                            return resolve(latest);
+                        }
                     }
-                    backupData.iconURL = guild.iconURL();
-                }
-                if (guild.splashURL()) {
-                    if (options && options.saveImages && options.saveImages === 'base64') {
-                        const res = await globalThis.fetch(guild.splashURL());
-                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
-                        const buffer = Buffer.from(arrayBuffer);
-                        backupData.splashBase64 = buffer.toString('base64');
-                    }
-                    backupData.splashURL = guild.splashURL();
-                }
-                if (guild.bannerURL()) {
-                    if (options && options.saveImages && options.saveImages === 'base64') {
-                        const res = await globalThis.fetch(guild.bannerURL());
-                        const arrayBuffer = (await res.arrayBuffer()) as ArrayBuffer;
-                        const buffer = Buffer.from(arrayBuffer);
-                        backupData.bannerBase64 = buffer.toString('base64');
-                    }
-                    backupData.bannerURL = guild.bannerURL();
-                }
-                if (options && options.backupMembers) {
-                    // Backup members
-                    backupData.members = await createMaster.getMembers(guild);
-                }
-                if (!options || !(options.doNotBackup || []).includes('bans')) {
-                    // Backup bans
-                    backupData.bans = await createMaster.getBans(guild);
-                }
-                if (!options || !(options.doNotBackup || []).includes('roles')) {
-                    // Backup roles
-                    backupData.roles = await createMaster.getRoles(guild);
-                }
-                if (!options || !(options.doNotBackup || []).includes('emojis')) {
-                    // Backup emojis
-                    backupData.emojis = await createMaster.getEmojis(guild, options);
-                }
-                if (!options || !(options.doNotBackup || []).includes('channels')) {
-                    // Backup channels
-                    backupData.channels = await createMaster.getChannels(guild, options);
                 }
                 if (!options || options.jsonSave === undefined || options.jsonSave) {
                     if (storageMode === 'mongo') {
@@ -319,6 +417,10 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                     await loadMaster.loadBans(guild, backupData);
                     // Restore embed channel
                     await loadMaster.loadEmbedChannel(guild, backupData);
+                    // Restore onboarding
+                    await loadMaster.loadOnboarding(guild, backupData);
+                    // Restore scheduled events
+                    await loadMaster.loadScheduledEvents(guild, backupData);
                 } catch (e) {
                     return reject(e);
                 }
@@ -383,6 +485,146 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
         ensureStorageFolder();
     };
 
+    const startScheduler = (guild: Guild, options: ScheduleOptions): ScheduleHandle => {
+        const task = cron.schedule(
+            options.cron,
+            async () => {
+                try {
+                    const createOptions: CreateOptions = {
+                        backupID: null,
+                        maxMessagesPerChannel: 10,
+                        jsonSave: true,
+                        jsonBeautify: true,
+                        doNotBackup: [],
+                        backupMembers: false,
+                        saveImages: '',
+                        ...options.createOptions,
+                        skipIfUnchanged: options.skipIfUnchanged ?? true
+                    };
+
+                    const latest = await getLatestBackupData();
+                    const current = await buildBackupData(guild, createOptions);
+                    if (createOptions.skipIfUnchanged && latest) {
+                        const currentComparable = { ...current, id: '', createdTimestamp: 0 };
+                        const latestComparable = { ...latest, id: '', createdTimestamp: 0 };
+                        if (stableStringify(currentComparable) === stableStringify(latestComparable)) {
+                            return;
+                        }
+                    }
+
+                    if (createOptions.jsonSave === undefined || createOptions.jsonSave) {
+                        if (storageMode === 'mongo') {
+                            await getBackupModel().updateOne(
+                                { _id: current.id },
+                                { _id: current.id, data: current, createdAt: new Date() },
+                                { upsert: true }
+                            );
+                        } else {
+                            ensureStorageFolder();
+                            const backupJSON = createOptions.jsonBeautify
+                                ? JSON.stringify(current, null, 4)
+                                : JSON.stringify(current);
+                            await writeFile(`${backups}${sep}${current.id}.json`, backupJSON, 'utf-8');
+                        }
+                    }
+                } catch {
+                    // Scheduled backup failed
+                }
+            },
+            { timezone: options.timezone }
+        );
+
+        return {
+            stop: () => task.stop()
+        };
+    };
+
+    const diff = async (from: string | BackupData, to: string | BackupData): Promise<BackupDiff> => {
+        const fromData = typeof from === 'string' ? await getBackupData(from) : from;
+        const toData = typeof to === 'string' ? await getBackupData(to) : to;
+
+        const diffByKey = <T>(
+            a: T[],
+            b: T[],
+            keyFn: (item: T) => string
+        ): { added: string[]; removed: string[]; changed: string[] } => {
+            const mapA = new Map<string, T>();
+            const mapB = new Map<string, T>();
+            a.forEach((item) => mapA.set(keyFn(item), item));
+            b.forEach((item) => mapB.set(keyFn(item), item));
+
+            const added: string[] = [];
+            const removed: string[] = [];
+            const changed: string[] = [];
+
+            for (const [key, item] of mapB.entries()) {
+                if (!mapA.has(key)) {
+                    added.push(key);
+                } else if (stableStringify(mapA.get(key)) !== stableStringify(item)) {
+                    changed.push(key);
+                }
+            }
+
+            for (const key of mapA.keys()) {
+                if (!mapB.has(key)) {
+                    removed.push(key);
+                }
+            }
+
+            return { added, removed, changed };
+        };
+
+        const roleKey = (r: any) => r.roleId || r.name;
+        const emojiKey = (e: any) => e.name || e.id || '';
+        const banKey = (b: any) => b.id || '';
+        const memberKey = (m: any) => m.userId || '';
+
+        const channelKey = (c: any) => {
+            if (c.channelId) return c.channelId;
+            const parent = c.parent ? `:${c.parent}` : '';
+            return `${c.type}:${c.name}${parent}`;
+        };
+
+        const flattenChannels = (data: BackupData) => {
+            const list: any[] = [];
+            for (const cat of data.channels.categories) {
+                list.push(cat);
+                for (const child of cat.children) list.push(child);
+            }
+            for (const ch of data.channels.others) list.push(ch);
+            return list;
+        };
+
+        const configComparable = (d: BackupData) => {
+            const {
+                channels,
+                roles,
+                bans,
+                emojis,
+                members,
+                createdTimestamp,
+                id,
+                onboarding,
+                ...rest
+            } = d;
+            return rest;
+        };
+
+        return {
+            fromId: fromData.id.toString(),
+            toId: toData.id.toString(),
+            createdFrom: fromData.createdTimestamp,
+            createdTo: toData.createdTimestamp,
+            configChanged: stableStringify(configComparable(fromData)) !== stableStringify(configComparable(toData)),
+            onboardingChanged: stableStringify(fromData.onboarding) !== stableStringify(toData.onboarding),
+            roles: diffByKey(fromData.roles, toData.roles, roleKey),
+            channels: diffByKey(flattenChannels(fromData), flattenChannels(toData), channelKey),
+            emojis: diffByKey(fromData.emojis, toData.emojis, emojiKey),
+            bans: diffByKey(fromData.bans, toData.bans, banKey),
+            members: diffByKey(fromData.members, toData.members, memberKey)
+        };
+    };
+
     if (config.storage === 'mongo') {
         if (!config.mongoUri) {
             throw new Error('MongoDB URI is required when storage is "mongo".');
@@ -399,10 +641,15 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
         load,
         remove,
         setMongoDB,
-        setStorageFolder
+        setStorageFolder,
+        startScheduler,
+        diff
     };
 };
 
 export default {
     createBackupClient
 };
+
+
+
