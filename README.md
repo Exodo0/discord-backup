@@ -14,7 +14,7 @@ Features:
 ## Installation
 
 ```bash
-npm install discord-backup
+npm install discord-backup-v2
 ```
 
 ## Quick Start
@@ -24,7 +24,7 @@ Create a client first, then use it for all operations.
 ### Local storage
 
 ```js
-const backup = require('discord-backup');
+const backup = require('discord-backup-v2');
 
 async function main(guild) {
     const client = await backup.createBackupClient({
@@ -40,7 +40,7 @@ async function main(guild) {
 ### MongoDB storage (mongoose)
 
 ```js
-const backup = require('discord-backup');
+const backup = require('discord-backup-v2');
 
 async function main(guild) {
     const client = await backup.createBackupClient({
@@ -99,6 +99,7 @@ Options:
 - `doNotBackup`: array of strings: `roles`, `channels`, `emojis`, `bans`
 - `backupMembers`: boolean
 - `saveImages`: `'url' | 'base64'`
+- `skipIfUnchanged`: boolean (skip saving if backup equals previous)
 
 ### Load options
 
@@ -124,9 +125,45 @@ Options:
 - Channels (permissions, topic, nsfw, rate limit)
 - Forum channels (tags, default reaction, posts/threads)
 - Roles (permissions, colors, hoist, mentionable)
+- Role icons (emoji or image)
+- Onboarding configuration
 - Emojis
 - Bans
 - Messages (via webhooks)
+
+## Scheduled Backups
+
+You can schedule automatic backups with cron syntax and skip saving if nothing changed:
+
+```js
+const client = await backup.createBackupClient({ storage: 'file' });
+const handle = client.startScheduler(guild, {
+  cron: '0 3 * * *', // every day at 03:00
+  timezone: 'America/New_York',
+  createOptions: { jsonBeautify: true },
+  skipIfUnchanged: true
+});
+
+// handle.stop() to stop scheduling
+```
+
+Example: run every 5 minutes
+
+```js
+const client = await backup.createBackupClient({ storage: 'file' });
+client.startScheduler(guild, {
+  cron: '*/5 * * * *',
+  createOptions: { jsonBeautify: true },
+  skipIfUnchanged: true
+});
+```
+
+## Backup Diff
+
+```js
+const diff = await client.diff(oldId, newId);
+console.log(diff.roles, diff.channels);
+```
 
 ## Migration (v3.5.0)
 
@@ -140,7 +177,7 @@ Example migration:
 Before:
 
 ```js
-const backup = require('discord-backup');
+const backup = require('discord-backup-v2');
 await backup.create(guild);
 ```
 

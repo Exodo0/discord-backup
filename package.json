@@ -1,6 +1,6 @@
 {
     "name": "discord-backup-v2",
-    "version": "3.5.0c",
+  "version": "3.5.0d",
     "description": "A complete framework to facilitate server backup using discord.js v14 with rate limiting and error handling",
     "main": "lib/index.js",
     "files": [
@@ -37,10 +37,12 @@
     },
     "dependencies": {
         "discord.js": "^14.25.1",
-        "mongoose": "^8.23.0"
+        "mongoose": "^8.23.0",
+        "node-cron": "^3.0.3"
     },
     "devDependencies": {
         "@types/node": "^24.10.13",
+        "@types/node-cron": "^3.0.11",
         "@typescript-eslint/eslint-plugin": "^7.18.0",
         "@typescript-eslint/parser": "^7.18.0",
         "eslint-config-prettier": "^9.1.2",
