@@ -14,7 +14,7 @@ Features:
 ## Installation
 
 ```bash
-npm install discord-backup
+npm install discord-backup-v2
 ```
 
 ## Quick Start
