@@ -1,125 +1,157 @@
-﻿# Usage Guide
+# Usage Guide
 
-This guide explains how to initialize the backup client and use local or MongoDB storage.
+This guide covers full usage of `discord-backup-v2` with JavaScript and TypeScript.
 
 ## 1. Initialize the client
 
-### Local storage
+### JavaScript (CommonJS)
 
 ```js
-const backup = require('discord-backup');
+const backup = require('discord-backup-v2');
 
-const client = await backup.createBackupClient({
-  storage: 'file',
-  storagePath: './backups'
-});
-```
-
-### MongoDB (mongoose)
-
-```js
-const backup = require('discord-backup');
-
-const client = await backup.createBackupClient({
+const backupClient = await backup.createBackupClient({
   storage: 'mongo',
   mongoUri: process.env.MONGO_URI
 });
+
+console.info('Backup Client Ready', backupClient.ready);
+```
+
+### TypeScript
+
+```ts
+import { createBackupClient } from 'discord-backup-v2';
+import type { BackupClient } from 'discord-backup-v2';
+
+const backupClient: BackupClient = await createBackupClient({
+  storage: 'mongo',
+  mongoUri: process.env.MONGO_URI
+});
+
+console.info('Backup Client Ready', backupClient.ready);
 ```
 
 Notes:
 - The MongoDB collection is `discord_backups`.
-- You can pass `mongoOptions` for mongoose connection options.
+- For local JSON files, use `storage: 'file'` and optionally `storagePath`.
 
-## 2. Create a backup
+## 2. Create backup (all common options)
 
 ```js
-const data = await client.create(guild, {
+const backupData = await backupClient.create(guild, {
+  backupID: null,
   maxMessagesPerChannel: 10,
   jsonSave: true,
   jsonBeautify: true,
-  backupMembers: false,
+  doNotBackup: [],
+  backupMembers: true,
   saveImages: 'base64',
   skipIfUnchanged: true
 });
 
-console.log(data.id);
+console.log('Backup ID:', backupData.id);
 ```
 
-## 3. Load a backup
+## 3. Fetch backup info
 
 ```js
-await client.load(data.id, guild, {
+const info = await backupClient.fetch(backupData.id);
+console.log('Size (KB):', info.size);
+```
+
+## 4. List backups
+
+```js
+const backupIds = await backupClient.list();
+console.log('Backups:', backupIds);
+```
+
+## 5. Load backup
+
+```js
+await backupClient.load(backupData.id, guild, {
   clearGuildBeforeRestore: true,
-  maxMessagesPerChannel: 10
+  maxMessagesPerChannel: 10,
+  allowedMentions: { parse: [] },
+  restoreMembers: true
 });
 ```
 
-You can also pass:
-- `allowedMentions` to suppress mentions while restoring messages.
-- `restoreMembers` to assign roles to existing members based on the backup.
-
-## 4. Fetch backup info
+## 6. Remove backup
 
 ```js
-const info = await client.fetch(data.id);
-console.log(info);
-```
-
-## 5. List backups
-
-```js
-const ids = await client.list();
-console.log(ids);
-```
-
-## 6. Remove a backup
-
-```js
-await client.remove(data.id);
+await backupClient.remove(backupData.id);
 ```
 
 ## 7. Switch storage at runtime
 
 ```js
-// Switch to a different local folder
-client.setStorageFolder('./other-backups');
-
-// Switch to MongoDB
-await client.setMongoDB(process.env.MONGO_URI);
+backupClient.setStorageFolder('./other-backups');
+await backupClient.setMongoDB(process.env.MONGO_URI);
 ```
 
-## Restored data
-
-- Server icon, banner, splash
-- Verification level, explicit content filter, default message notifications
-- AFK channel and timeout
-- Channels (permissions, topic, nsfw, rate limit)
-- Forum channels (tags, default reaction, posts/threads)
-- Roles (permissions, colors, hoist, mentionable)
-- Role icons (emoji or image)
-- Onboarding configuration
-- Emojis
-- Bans
-- Messages (via webhooks)
-
-## Scheduled backups
+## 8. Scheduled backups
 
 ```js
-const handle = client.startScheduler(guild, {
+const handle = backupClient.startScheduler(guild, {
   cron: '0 3 * * *',
   timezone: 'America/New_York',
-  createOptions: { jsonBeautify: true },
+  createOptions: {
+    jsonBeautify: true,
+    backupMembers: false
+  },
   skipIfUnchanged: true
 });
 
-// handle.stop()
+// Stop scheduler when needed
+handle.stop();
 ```
 
-## Diff between backups
+## 9. Compare backups (diff)
 
 ```js
-const diff = await client.diff(oldId, newId);
-console.log(diff);
+const diff = await backupClient.diff('oldBackupId', 'newBackupId');
+
+console.log(diff.configChanged);
+console.log(diff.roles);
+console.log(diff.channels);
+console.log(diff.emojis);
+console.log(diff.bans);
+console.log(diff.members);
+```
+
+## 10. TypeScript full flow example
+
+```ts
+import { createBackupClient } from 'discord-backup-v2';
+import type { BackupClient, BackupData } from 'discord-backup-v2';
+import type { Guild } from 'discord.js';
+
+export async function backupAndRestore(guild: Guild): Promise<void> {
+  const backupClient: BackupClient = await createBackupClient({
+    storage: 'file',
+    storagePath: './backups'
+  });
+
+  console.info('Backup Client Ready', backupClient.ready);
+
+  const created: BackupData = await backupClient.create(guild, {
+    skipIfUnchanged: true,
+    saveImages: 'url',
+    backupMembers: true
+  });
+
+  const ids = await backupClient.list();
+  console.log('Available IDs:', ids);
+
+  const info = await backupClient.fetch(created.id);
+  console.log('Last backup size KB:', info.size);
+
+  await backupClient.load(created.id, guild, {
+    clearGuildBeforeRestore: false,
+    restoreMembers: true
+  });
+}
 ```
 
 ## Common errors
@@ -128,3 +160,5 @@ console.log(diff);
   Provide `mongoUri` in `createBackupClient` config.
 - `MongoDB storage is not initialized.`
   Call `setMongoDB()` before using Mongo storage.
+- `No backup found`
+  Ensure the backup ID exists in your current storage mode.

@@ -21,31 +21,31 @@ jobs:
             - name: Enable Corepack
               run: corepack enable
 
-            - name: Install dependencies (pnpm)
-              if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
+            - name: Validate tag matches package version
+              run: |
+                  TAG_VERSION="${GITHUB_REF_NAME#v}"
+                  PKG_VERSION="$(node -p "require('./package.json').version")"
+                  if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+                    echo "Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+                    exit 1
+                  fi
+
+            - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
-            - name: Install dependencies (npm)
-              if: ${{ hashFiles('package-lock.json') != '' }}
-              run: npm ci
-
-            - name: Install dependencies (bun)
-              if: ${{ hashFiles('bun.lockb') != '' || hashFiles('bun.lock') != '' }}
-              uses: oven-sh/setup-bun@v1
-              with:
-                  bun-version: latest
-
-            - name: Install dependencies (bun)
-              if: ${{ hashFiles('bun.lockb') != '' || hashFiles('bun.lock') != '' }}
-              run: bun install --frozen-lockfile
-
             - name: Build
+              run: pnpm build:turbo
+
+            - name: Resolve NPM dist-tag
+              id: dist_tag
               run: |
-                  if [ -f pnpm-lock.yaml ]; then pnpm run build; fi
-                  if [ -f package-lock.json ]; then npm run build; fi
-                  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run build; fi
+                  if [[ "${GITHUB_REF_NAME}" == *"-beta."* || "${GITHUB_REF_NAME}" == *"-beta" ]]; then
+                    echo "value=beta" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "value=latest" >> "$GITHUB_OUTPUT"
+                  fi
 
             - name: Publish package to NPM
-              run: npm publish --access public
+              run: npm publish --access public --tag ${{ steps.dist_tag.outputs.value }}
               env:
                   NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}

@@ -14,6 +14,7 @@ export interface BackupClientConfig {
 }
 
 export interface BackupClient {
+    ready: boolean;
     create: (guild: Guild, options?: CreateOptions) => Promise<BackupData>;
     fetch: (backupID: string) => Promise<BackupInfos>;
     list: () => Promise<string[]>;

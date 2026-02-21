@@ -21,34 +21,39 @@ npm install discord-backup-v2
 
 Create a client first, then use it for all operations.
 
-### Local storage
+### JavaScript (CommonJS)
 
 ```js
 const backup = require('discord-backup-v2');
 
 async function main(guild) {
-    const client = await backup.createBackupClient({
+    const backupClient = await backup.createBackupClient({
         storage: 'file',
         storagePath: './backups'
     });
 
-    const data = await client.create(guild);
+    console.info('Backup Client Ready', backupClient.ready);
+
+    const data = await backupClient.create(guild);
     console.log('Backup ID:', data.id);
 }
 ```
 
-### MongoDB storage (mongoose)
+### TypeScript
 
-```js
-const backup = require('discord-backup-v2');
+```ts
+import { createBackupClient } from 'discord-backup-v2';
+import type { BackupClient } from 'discord-backup-v2';
 
 async function main(guild) {
-    const client = await backup.createBackupClient({
+    const backupClient: BackupClient = await createBackupClient({
         storage: 'mongo',
         mongoUri: process.env.MONGO_URI
     });
 
-    const data = await client.create(guild);
+    console.info('Backup Client Ready', backupClient.ready);
+
+    const data = await backupClient.create(guild);
     console.log('Backup ID:', data.id);
 }
 ```
@@ -68,6 +73,7 @@ Config:
 
 Returns a client with:
 
+- `ready` (boolean, true when initialized and ready for backup actions)
 - `create(guild, options)`
 - `fetch(backupID)`
 - `list()`
@@ -184,11 +190,11 @@ await backup.create(guild);
 After:
 
 ```js
-const backup = require('discord-backup');
+const backup = require('discord-backup-v2');
 const client = await backup.createBackupClient({ storage: 'file' });
 await client.create(guild);
 ```
 
 ## Docs
 
-See `docs/USAGE.md` for full guides and examples.
+See `docs/USAGE.md` and `docs/EXAMPLES.md` for full JS/TS guides and advanced examples.

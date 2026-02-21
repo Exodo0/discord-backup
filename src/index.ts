@@ -16,6 +16,10 @@ import * as createMaster from './create';
 import * as loadMaster from './load';
 import * as utilMaster from './util';
 
+export type { BackupClient, BackupClientConfig } from './types/BackupClient';
+export type { BackupData, BackupInfos, CreateOptions, LoadOptions, BackupDiff } from './types';
+export type { ScheduleHandle, ScheduleOptions } from './types/ScheduleOptions';
+
 type StorageMode = 'file' | 'mongo';
 
 interface BackupDocument {
@@ -635,6 +639,7 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
     }
 
     return {
+        ready: true,
         create,
         fetch: fetchBackup,
         list,
