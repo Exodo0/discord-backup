@@ -39,6 +39,21 @@ async function main(guild) {
 }
 ```
 
+### JavaScript ESM (`type: "module"`)
+
+```js
+import backup from 'discord-backup-v2';
+
+async function main(guild) {
+    const backupClient = await backup.createBackupClient({
+        storage: 'mongo',
+        mongoUri: process.env.MONGO_URI
+    });
+
+    console.info('Backup Client Ready', backupClient.ready);
+}
+```
+
 ### TypeScript
 
 ```ts
@@ -57,6 +72,8 @@ async function main(guild) {
     console.log('Backup ID:', data.id);
 }
 ```
+
+Note: `import type` and `const x: Type` are TypeScript-only syntax and must be used in `.ts` files, not `.js`.
 
 ## API
 

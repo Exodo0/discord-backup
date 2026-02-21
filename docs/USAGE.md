@@ -17,6 +17,19 @@ const backupClient = await backup.createBackupClient({
 console.info('Backup Client Ready', backupClient.ready);
 ```
 
+### JavaScript ESM (`type: "module"`)
+
+```js
+import backup from 'discord-backup-v2';
+
+const backupClient = await backup.createBackupClient({
+  storage: 'mongo',
+  mongoUri: process.env.MONGO_URI
+});
+
+console.info('Backup Client Ready', backupClient.ready);
+```
+
 ### TypeScript
 
 ```ts
@@ -30,6 +43,10 @@ const backupClient: BackupClient = await createBackupClient({
 
 console.info('Backup Client Ready', backupClient.ready);
 ```
+
+Important:
+- `import type` and type annotations (example: `const x: Type`) only work in `.ts` files.
+- In `.js` files use normal JavaScript syntax only.
 
 Notes:
 - The MongoDB collection is `discord_backups`.
