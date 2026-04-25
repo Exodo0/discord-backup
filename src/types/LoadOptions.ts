@@ -5,4 +5,5 @@ export interface LoadOptions {
     maxMessagesPerChannel?: number;
     allowedMentions?: MessageMentionOptions;
     restoreMembers?: boolean;
+    mergeMode?: 'full' | 'missing-only';
 }

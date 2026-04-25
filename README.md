@@ -129,7 +129,8 @@ Options:
 ```js
 await client.load(backupID, guild, {
     clearGuildBeforeRestore: true,
-    maxMessagesPerChannel: 10
+    maxMessagesPerChannel: 10,
+    mergeMode: 'full'
 });
 ```
 
@@ -139,6 +140,9 @@ Options:
 - `maxMessagesPerChannel`: number (0 disables message restore)
 - `allowedMentions`: MessageMentionOptions (default `{ parse: [] }`)
 - `restoreMembers`: boolean (assigns roles to existing members based on backup)
+- `mergeMode`: `'full' | 'missing-only'` (default `'full'`)
+
+`mergeMode: 'missing-only'` skips destructive clearing and only restores items that are missing from the live guild when a safe match can be determined. Existing roles, channels, emojis, and bans are left untouched.
 
 ## Restored Data
 

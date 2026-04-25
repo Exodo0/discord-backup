@@ -358,7 +358,8 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
         guild: Guild,
         options: LoadOptions = {
             clearGuildBeforeRestore: true,
-            maxMessagesPerChannel: 10
+            maxMessagesPerChannel: 10,
+            mergeMode: 'full'
         }
     ) => {
         return new Promise<BackupData>(async (resolve, reject) => {
@@ -368,14 +369,21 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
             try {
                 const backupData: BackupData = typeof backup === 'string' ? await getBackupData(backup) : backup;
                 try {
-                    if (options.clearGuildBeforeRestore === undefined || options.clearGuildBeforeRestore) {
+                    const mergeMode = options.mergeMode ?? 'full';
+                    const shouldClear =
+                        mergeMode !== 'missing-only' &&
+                        (options.clearGuildBeforeRestore === undefined || options.clearGuildBeforeRestore);
+
+                    if (shouldClear) {
                         // Clear the guild
                         await utilMaster.clearGuild(guild);
                     }
                     // Restore guild configuration
-                    await loadMaster.loadConfig(guild, backupData);
+                    if (mergeMode !== 'missing-only') {
+                        await loadMaster.loadConfig(guild, backupData);
+                    }
                     // Restore guild roles
-                    await loadMaster.loadRoles(guild, backupData);
+                    await loadMaster.loadRoles(guild, backupData, options);
 
                     if (options.restoreMembers && backupData.members && backupData.members.length > 0) {
                         const roleIdMap = new Map<string, string>();
@@ -403,7 +411,14 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                                 const newRoleIds = memberData.roles
                                     .map((roleId) => roleIdMap.get(roleId))
                                     .filter((roleId): roleId is string => Boolean(roleId));
-                                await member.roles.set(newRoleIds).catch(() => {});
+                                if (mergeMode === 'missing-only') {
+                                    const missingRoleIds = newRoleIds.filter((roleId) => !member.roles.cache.has(roleId));
+                                    if (missingRoleIds.length > 0) {
+                                        await member.roles.add(missingRoleIds).catch(() => {});
+                                    }
+                                } else {
+                                    await member.roles.set(newRoleIds).catch(() => {});
+                                }
                                 await delay(300);
                             } catch {
                                 // Failed to restore member roles - skipping
@@ -414,15 +429,21 @@ export const createBackupClient = async (config: BackupClientConfig = {}): Promi
                     // Restore guild channels
                     await loadMaster.loadChannels(guild, backupData, options);
                     // Restore afk channel and timeout
-                    await loadMaster.loadAFK(guild, backupData);
+                    if (mergeMode !== 'missing-only') {
+                        await loadMaster.loadAFK(guild, backupData);
+                    }
                     // Restore guild emojis
-                    await loadMaster.loadEmojis(guild, backupData);
+                    await loadMaster.loadEmojis(guild, backupData, options);
                     // Restore guild bans
-                    await loadMaster.loadBans(guild, backupData);
+                    await loadMaster.loadBans(guild, backupData, options);
                     // Restore embed channel
-                    await loadMaster.loadEmbedChannel(guild, backupData);
+                    if (mergeMode !== 'missing-only') {
+                        await loadMaster.loadEmbedChannel(guild, backupData);
+                    }
                     // Restore onboarding
-                    await loadMaster.loadOnboarding(guild, backupData);
+                    if (mergeMode !== 'missing-only') {
+                        await loadMaster.loadOnboarding(guild, backupData);
+                    }
                     // Restore scheduled events
                     await loadMaster.loadScheduledEvents(guild, backupData);
                 } catch (e) {

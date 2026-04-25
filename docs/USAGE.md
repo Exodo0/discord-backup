@@ -90,7 +90,8 @@ await backupClient.load(backupData.id, guild, {
   clearGuildBeforeRestore: true,
   maxMessagesPerChannel: 10,
   allowedMentions: { parse: [] },
-  restoreMembers: true
+  restoreMembers: true,
+  mergeMode: 'full'
 });
 ```
 

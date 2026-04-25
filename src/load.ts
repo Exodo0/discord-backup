@@ -1,5 +1,6 @@
 ﻿import type { BackupData, LoadOptions } from './types';
 import type {
+    CategoryChannel,
     Collection,
     GuildScheduledEvent,
     NewsChannel,
@@ -9,6 +10,49 @@ import type {
 } from 'discord.js';
 import { ChannelType, Emoji, Guild, GuildFeature, Role, VoiceChannel } from 'discord.js';
 import { loadCategory, loadChannel, applyExistingChannel } from './util';
+
+const isMissingOnlyMode = (options?: LoadOptions): boolean => options?.mergeMode === 'missing-only';
+
+const findMatchingRole = (guild: Guild, roleData: BackupData['roles'][number]): Role | undefined => {
+    if (roleData.isEveryone) {
+        return guild.roles.cache.get(guild.id);
+    }
+
+    return (
+        guild.roles.cache.get(roleData.roleId) ??
+        guild.roles.cache.find((r) => r.name === roleData.name && r.position === roleData.position) ??
+        guild.roles.cache.find((r) => r.name === roleData.name)
+    );
+};
+
+const findMatchingCategory = (guild: Guild, categoryData: BackupData['channels']['categories'][number]) => {
+    if (categoryData.channelId) {
+        const exact = guild.channels.cache.get(categoryData.channelId);
+        if (exact?.type === ChannelType.GuildCategory) return exact;
+    }
+
+    return guild.channels.cache.find(
+        (ch) => ch.type === ChannelType.GuildCategory && ch.name === categoryData.name
+    );
+};
+
+const findMatchingChannel = (
+    guild: Guild,
+    channelData: BackupData['channels']['others'][number],
+    parentName?: string
+) => {
+    if (channelData.channelId) {
+        const exact = guild.channels.cache.get(channelData.channelId);
+        if (exact?.type === channelData.type) return exact;
+    }
+
+    return guild.channels.cache.find((ch) => {
+        const sameType = ch.type === channelData.type;
+        const sameName = ch.name === channelData.name;
+        const sameParent = parentName ? ch.parent?.name === parentName : !ch.parent;
+        return sameType && sameName && sameParent;
+    });
+};
 
 /**
  * Restores the guild configuration
@@ -49,8 +93,9 @@ export const loadConfig = (guild: Guild, backupData: BackupData): Promise<Guild[
 /**
  * Restore the guild roles
  */
-export const loadRoles = async (guild: Guild, backupData: BackupData): Promise<Role[]> => {
+export const loadRoles = async (guild: Guild, backupData: BackupData, options?: LoadOptions): Promise<Role[]> => {
     const roles: Role[] = [];
+    const missingOnly = isMissingOnlyMode(options);
 
     for (const roleData of backupData.roles) {
         try {
@@ -58,7 +103,7 @@ export const loadRoles = async (guild: Guild, backupData: BackupData): Promise<R
 
             if (roleData.isEveryone) {
                 const everyoneRole = guild.roles.cache.get(guild.id);
-                if (everyoneRole) {
+                if (everyoneRole && !missingOnly) {
                     role = await everyoneRole.edit({
                         name: roleData.name,
                         colors: {
@@ -74,6 +119,14 @@ export const loadRoles = async (guild: Guild, backupData: BackupData): Promise<R
                     roles.push(role);
                 }
             } else {
+                if (missingOnly) {
+                    const existingRole = findMatchingRole(guild, roleData);
+                    if (existingRole) {
+                        roles.push(existingRole);
+                        continue;
+                    }
+                }
+
                 role = await guild.roles.create({
                     name: roleData.name.slice(0, 100),
                     colors: {
@@ -104,6 +157,7 @@ export const loadRoles = async (guild: Guild, backupData: BackupData): Promise<R
  */
 export const loadChannels = async (guild: Guild, backupData: BackupData, options: LoadOptions): Promise<unknown[]> => {
     const created: unknown[] = [];
+    const missingOnly = isMissingOnlyMode(options);
 
     const rulesChannel = guild.rulesChannelId
         ? guild.channels.cache.get(guild.rulesChannelId)
@@ -139,18 +193,32 @@ export const loadChannels = async (guild: Guild, backupData: BackupData, options
     };
 
     for (const categoryData of backupData.channels.categories) {
-        const createdCategory = await loadCategory(categoryData, guild);
+        const existingCategory = missingOnly ? findMatchingCategory(guild, categoryData) : null;
+        const createdCategory = existingCategory
+            ? (existingCategory as CategoryChannel)
+            : await loadCategory(categoryData, guild);
         created.push(createdCategory);
         for (const channelData of categoryData.children) {
             if (isRules(channelData) && rulesChannel) {
-                await applyExistingChannel(rulesChannel as any, channelData as any, guild, options, true);
+                if (!missingOnly) {
+                    await applyExistingChannel(rulesChannel as any, channelData as any, guild, options, true);
+                }
                 created.push(rulesChannel);
                 continue;
             }
             if (isPublicUpdates(channelData) && publicUpdatesChannel) {
-                await applyExistingChannel(publicUpdatesChannel as any, channelData as any, guild, options, true);
+                if (!missingOnly) {
+                    await applyExistingChannel(publicUpdatesChannel as any, channelData as any, guild, options, true);
+                }
                 created.push(publicUpdatesChannel);
                 continue;
+            }
+            if (missingOnly) {
+                const existingChannel = findMatchingChannel(guild, channelData, categoryData.name);
+                if (existingChannel) {
+                    created.push(existingChannel);
+                    continue;
+                }
             }
             const channel = await loadChannel(channelData, guild, createdCategory, options);
             created.push(channel);
@@ -159,14 +227,25 @@ export const loadChannels = async (guild: Guild, backupData: BackupData, options
 
     for (const channelData of backupData.channels.others) {
         if (isRules(channelData) && rulesChannel) {
-            await applyExistingChannel(rulesChannel as any, channelData as any, guild, options, true);
+            if (!missingOnly) {
+                await applyExistingChannel(rulesChannel as any, channelData as any, guild, options, true);
+            }
             created.push(rulesChannel);
             continue;
         }
         if (isPublicUpdates(channelData) && publicUpdatesChannel) {
-            await applyExistingChannel(publicUpdatesChannel as any, channelData as any, guild, options, true);
+            if (!missingOnly) {
+                await applyExistingChannel(publicUpdatesChannel as any, channelData as any, guild, options, true);
+            }
             created.push(publicUpdatesChannel);
             continue;
+        }
+        if (missingOnly) {
+            const existingChannel = findMatchingChannel(guild, channelData);
+            if (existingChannel) {
+                created.push(existingChannel);
+                continue;
+            }
         }
         const channel = await loadChannel(channelData, guild, null, options);
         created.push(channel);
@@ -196,8 +275,9 @@ export const loadAFK = (guild: Guild, backupData: BackupData): Promise<Guild[]> 
 /**
  * Restore guild emojis
  */
-export const loadEmojis = async (guild: Guild, backupData: BackupData): Promise<Emoji[]> => {
+export const loadEmojis = async (guild: Guild, backupData: BackupData, options?: LoadOptions): Promise<Emoji[]> => {
     const emojis: Emoji[] = [];
+    const missingOnly = isMissingOnlyMode(options);
     const maxEmojis =
         guild.premiumTier === 0 ? 50 : guild.premiumTier === 1 ? 100 : guild.premiumTier === 2 ? 150 : 250;
 
@@ -205,6 +285,14 @@ export const loadEmojis = async (guild: Guild, backupData: BackupData): Promise<
         const emojiData = backupData.emojis[i];
         try {
             let emoji: Emoji;
+
+            if (missingOnly) {
+                const existingEmoji = guild.emojis.cache.find((e) => e.name === emojiData.name);
+                if (existingEmoji) {
+                    emojis.push(existingEmoji);
+                    continue;
+                }
+            }
 
             if (emojiData.url) {
                 emoji = await guild.emojis.create({
@@ -234,11 +322,18 @@ export const loadEmojis = async (guild: Guild, backupData: BackupData): Promise<
 /**
  * Restore guild bans
  */
-export const loadBans = async (guild: Guild, backupData: BackupData): Promise<string[]> => {
+export const loadBans = async (guild: Guild, backupData: BackupData, options?: LoadOptions): Promise<string[]> => {
     const bannedUsers: string[] = [];
+    const missingOnly = isMissingOnlyMode(options);
+    const existingBans = missingOnly ? await guild.bans.fetch().catch((): null => null) : null;
 
     for (const banData of backupData.bans) {
         try {
+            if (existingBans?.has(banData.id)) {
+                bannedUsers.push(banData.id);
+                continue;
+            }
+
             await guild.members.ban(banData.id, {
                 reason: banData.reason || 'Restored from backup'
             });
